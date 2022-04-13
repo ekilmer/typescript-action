@@ -1,0 +1,39 @@
+# When Dependabot updates dependency, this workflow synchronize the change
+# to the /dist dir to let users enjoy new feature without manual sync.
+name: Update the dist dir
+on:
+  pull_request_target:
+    types:
+      - labeled # for initial execution
+      - synchronize # to support `@dependabot recreate` command
+jobs:
+  run-ncc:
+    runs-on: ubuntu-latest
+    if: contains(github.event.pull_request.labels.*.name, 'dependencies')
+    steps:
+      - uses: tibdex/github-app-token@v1
+        id: generate-token
+        with:
+          app_id: ${{ secrets.APP_ID }}
+          private_key: ${{ secrets.APP_PRIVATE_KEY }}
+      - uses: actions/checkout@v3
+        with:
+          ref: ${{ github.head_ref }}
+          token: ${{ steps.generate-token.outputs.token }} # Use the token generated with the GitHub App (https://github.com/tibdex/github-app-token)
+      - name: Use Node.js v16.x
+        uses: actions/setup-node@v3
+        with:
+          node-version: '16'
+          # It is not suggested to cache for the pull_request_target event
+          # https://docs.github.com/en/actions/reference/events-that-trigger-workflows#pull_request_target
+      - name: Update the dist directory
+        run: |
+          npm ci
+          npm run build
+          if [[ $(git status -s -- dist | wc -l) -gt 0 ]]; then
+            git add dist
+            git config --local user.email "action@github.com"
+            git config --local user.name "GitHub Action"
+            git commit -m "chore: sync the dependency update to the /dist dir"
+            git push origin HEAD
+          fi
